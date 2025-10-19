@@ -388,7 +388,7 @@ class FacebookVideoDeleter {
             console.log(`🔍 Step 3: Post ${index + 1} - Looking for DELETE option in menu...`);
             
             // Use delete option selectors from selectors.js
-            const deleteOptionSelectors = this.selectors.menus.deleteOptions;
+            const deleteOptionSelectors = selectors.menus.deleteOptions;
             
             try {
                 let deleteOption = null;
@@ -400,7 +400,7 @@ class FacebookVideoDeleter {
                     // Handle special selectors that use text content
                     if (selector.includes(':has-text') || selector.includes(':contains')) {
                         // For these, we need to check text content manually
-                        const menuItems = await this.page.$$('[role="menuitem"]');
+                        const menuItems = await this.page.$$(selectors.menus.menuItem);
                         for (const item of menuItems) {
                             const text = await this.page.evaluate(el => el.textContent?.toLowerCase() || '', item);
                             if (text.includes('delete')) {
