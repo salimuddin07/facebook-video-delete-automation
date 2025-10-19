@@ -1,511 +1,469 @@
 const puppeteer = require('puppeteer');
-const fs = require('fs').promises;
-const path = require('path');
+const fs = require('fs');
 const { selectors, getThreeDotSelectors, getDeleteSelectors, getConfirmationSelectors, getProfileSelectors } = require('./selectors');
 
+// Main automation class
 class FacebookVideoDeleter {
     constructor() {
         this.browser = null;
         this.page = null;
         this.deletedCount = 0;
         this.failedCount = 0;
-        this.cookiesPath = path.join(__dirname, 'cookies.json');
-        this.profileUrl = 'https://www.facebook.com/salimuddin007/';
-        this.selectors = selectors;
+        // Use ONLY selectors from selectors.js - no hardcoded selectors
     }
 
-    // Helper function for delays
-    async delay(ms) {
+    delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     async init() {
-        console.log('🚀 Starting Facebook Video Deletion Automation...');
+        console.log('🚀 Starting Facebook Video Deleter...');
         
         this.browser = await puppeteer.launch({
-            headless: false, // Set to true for headless mode
+            headless: false,
             defaultViewport: null,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu'
+                '--start-maximized',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor'
             ]
         });
 
         this.page = await this.browser.newPage();
         
-        // Set user agent
-        await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        
-        // Load cookies
-        await this.loadCookies();
-        
-        console.log('✅ Browser initialized and cookies loaded');
-    }
-
-    async loadCookies() {
+        // Load cookies if they exist
         try {
-            const cookies = JSON.parse(await fs.readFile(this.cookiesPath, 'utf8'));
+            const cookies = JSON.parse(fs.readFileSync('./cookies.json', 'utf8'));
             await this.page.setCookie(...cookies);
-            console.log('✅ Session cookies loaded successfully');
+            console.log('🍪 Cookies loaded successfully');
         } catch (error) {
-            console.error('❌ Error loading cookies:', error.message);
-            throw error;
+            console.log('⚠️ No cookies found, manual login required');
         }
+
+        await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
     }
 
     async navigateToProfile() {
-        console.log('🔄 Navigating to profile page...');
+        console.log('🌐 Navigating to Facebook profile...');
+        const profileUrl = 'https://www.facebook.com/salimuddin007/';
         
-        await this.page.goto(this.profileUrl, {
-            waitUntil: 'networkidle2',
-            timeout: 60000
-        });
+        await this.page.goto(profileUrl, { waitUntil: 'networkidle2' });
+        await this.delay(10000); // Wait for page to load completely
 
-        // Wait for the page to load and check if we're logged in
-        await this.delay(3000);
-        
-        // Check if we're on the correct profile page with multiple selectors
+        // Verify we're on the profile page using selectors from selectors.js
         try {
-            console.log('🔍 Looking for profile page elements...');
-            
-            // Try multiple selectors for profile page detection
-            const profileSelector = getProfileSelectors();
-            await this.page.waitForSelector(profileSelector, { timeout: 15000 });
-            
+            const profileSelectorsString = getProfileSelectors();
+            await this.page.waitForSelector(profileSelectorsString, { timeout: 20000 });
             console.log('✅ Successfully navigated to profile page');
-            
-            // Additional check - wait for posts/timeline to load
-            await this.delay(2000);
-            
         } catch (error) {
-            console.log('⚠️ Primary profile selectors not found, trying alternative detection...');
-            
-            // Check if we're actually on Facebook and logged in
-            const currentUrl = this.page.url();
-            console.log(`Current URL: ${currentUrl}`);
-            
-            if (!currentUrl.includes('facebook.com')) {
-                throw new Error('❌ Not on Facebook domain. Please check cookies.');
-            }
-            
-            // Check for login redirect
-            if (currentUrl.includes('login') || currentUrl.includes('checkpoint')) {
-                throw new Error('❌ Redirected to login. Please update cookies.');
-            }
-            
-            // If we're on the right URL, continue anyway
-            console.log('✅ On Facebook profile page (alternative detection)');
+            console.log('⚠️ Could not verify profile page, continuing anyway...');
         }
     }
 
-    async scrollToLoadAllVideos() {
-        console.log('📜 Starting infinite scroll to load all posts...');
-        
+    async scrollToLoadAllPosts() {
+        console.log('📜 Starting comprehensive scroll to load ALL posts...');
         let previousPostCount = 0;
-        let noNewPostsCount = 0;
-        let scrollAttempts = 0;
-        const maxNoNewPostsAttempts = 5;
-        const maxScrollAttempts = 50; // Prevent infinite loops
+        let currentPostCount = 0;
+        let stableScrollAttempts = 0;
+        const maxStableAttempts = 5; // Reduced for better detection
+        const maxScrollAttempts = 50; // Reasonable limit
+        let scrollAttempt = 0;
 
-        // First scroll to get past any initial content
-        await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.delay(1000);
+        while (scrollAttempt < maxScrollAttempts && stableScrollAttempts < maxStableAttempts) {
+            scrollAttempt++;
 
-        while (noNewPostsCount < maxNoNewPostsAttempts && scrollAttempts < maxScrollAttempts) {
-            scrollAttempts++;
-            
-            // Scroll down in steps
+            // Scroll down aggressively
             await this.page.evaluate(() => {
-                window.scrollBy(0, window.innerHeight * 1.5);
+                window.scrollTo(0, document.body.scrollHeight);
             });
 
             // Wait for content to load
+            await this.delay(5000);
+
+            // Count posts using selectors from selectors.js
+            currentPostCount = await this.page.evaluate((postSelector, articleSelector) => {
+                let count = document.querySelectorAll(postSelector).length;
+                if (count === 0) {
+                    count = document.querySelectorAll(articleSelector).length;
+                }
+                return count;
+            }, selectors.posts.postSection, selectors.posts.article);
+
+            console.log(`📊 Scroll ${scrollAttempt}: Found ${currentPostCount} posts (previous: ${previousPostCount})`);
+
+            // Check if we've reached the end
+            const hasEndIndicator = await this.page.evaluate((endSelectors) => {
+                return !!document.querySelector(endSelectors);
+            }, selectors.loading.feedEnd);
+
+            if (hasEndIndicator) {
+                console.log('🏁 Detected end of feed - stopping scroll');
+                break;
+            }
+
+            if (currentPostCount === previousPostCount) {
+                stableScrollAttempts++;
+                console.log(`🔄 No new posts loaded (${stableScrollAttempts}/${maxStableAttempts} stable attempts)`);
+                
+                // Check if there are loading indicators
+                const isLoading = await this.page.evaluate((spinnerSelector) => {
+                    return !!document.querySelector(spinnerSelector);
+                }, selectors.loading.spinner);
+
+                if (!isLoading && stableScrollAttempts >= 3) {
+                    console.log('⚠️ No loading indicators and no new posts - likely reached end');
+                    break;
+                }
+            } else {
+                stableScrollAttempts = 0; // Reset if new posts found
+                console.log(`✅ Loaded ${currentPostCount - previousPostCount} new posts`);
+            }
+
+            previousPostCount = currentPostCount;
+
+            // Additional wait if loading indicators are present
+            const isLoading = await this.page.evaluate((spinnerSelector) => {
+                return !!document.querySelector(spinnerSelector);
+            }, selectors.loading.spinner);
+
+            if (isLoading) {
+                console.log('⏳ Loading indicator detected, waiting longer...');
+                await this.delay(8000);
+            }
+        }
+
+        console.log(`🎯 SCROLLING COMPLETE: Total posts loaded: ${currentPostCount}`);
+        console.log(`📊 Scroll statistics: ${scrollAttempt} total scrolls, ${stableScrollAttempts} stable attempts`);
+        
+        if (currentPostCount === 0) {
+            console.log('❌ WARNING: No posts found! Check if selectors are correct or if profile is accessible.');
+        }
+        
+        // Final scroll to top for consistent processing
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+        await this.delay(5000);
+    }
+
+    async checkIfPostHasDeleteOption(post, index) {
+        try {
+            console.log(`   🔍 Checking post ${index + 1} for delete option...`);
+            
+            // Scroll to post to ensure it's visible
+            await post.scrollIntoView({ behavior: 'smooth', block: 'center' });
             await this.delay(3000);
 
-            // Wait for loading to complete
-            await this.waitForLoadingToComplete();
-
-            // Count current posts using your specific selector first, then fallbacks
-            const currentPostCount = await this.page.evaluate(() => {
-                const posts1 = document.querySelectorAll('.x1jx94hy > div > div > div > div.html-div');
-                const posts2 = document.querySelectorAll('[role="article"]');
-                const posts3 = document.querySelectorAll('[data-pagelet*="FeedUnit"]');
-                
-                // Use your specific selector first, then highest fallback count
-                if (posts1.length > 0) return posts1.length;
-                return Math.max(posts2.length, posts3.length);
-            });
-
-            console.log(`📊 Scroll attempt ${scrollAttempts}: Found ${currentPostCount} posts`);
-
-            if (currentPostCount > previousPostCount) {
-                console.log(`� Loaded new content: ${currentPostCount} posts (+${currentPostCount - previousPostCount})`);
-                previousPostCount = currentPostCount;
-                noNewPostsCount = 0;
-            } else {
-                noNewPostsCount++;
-                console.log(`⏳ No new posts loaded (attempt ${noNewPostsCount}/${maxNoNewPostsAttempts})`);
+            // Find three-dot menu using your specific selector
+            const threeDotElements = await post.$$(this.selectors.menus.threeDotIcon);
+            
+            if (threeDotElements.length === 0) {
+                console.log(`   ❌ No three-dot menu found in post ${index + 1}`);
+                return false;
             }
 
-            // Extra scroll to trigger Facebook's infinite scroll
-            await this.page.evaluate(() => {
-                // Scroll to bottom of page
-                window.scrollTo(0, document.body.scrollHeight);
-            });
-            
-            await this.delay(2000);
-        }
+            console.log(`   📍 Found ${threeDotElements.length} three-dot menu(s) in post ${index + 1}`);
 
-        console.log(`✅ Finished loading posts. Total found: ${previousPostCount} (after ${scrollAttempts} scrolls)`);
-        return previousPostCount;
-    }
-
-    async waitForLoadingToComplete() {
-        try {
-            // Wait for loading spinners to disappear
-            await this.page.waitForFunction(() => {
-                const spinners = document.querySelectorAll('[role="progressbar"], .loading, [aria-label*="Loading"]');
-                return spinners.length === 0;
-            }, { timeout: 8000 });
-        } catch (error) {
-            // Continue if no loading spinners found or timeout
-        }
-    }
-
-    async findAndDeleteVideos() {
-        console.log('🗑️ Starting post deletion process...');
-
-        // Scroll back to top to start from the beginning
-        await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.delay(2000);
-
-        // Get all posts using your specific selector first, then fallback to articles
-        let posts = await this.page.$$('.x1jx94hy > div > div > div > div.html-div');
-        
-        if (posts.length === 0) {
-            console.log('⚠️ No posts found with specific selector, trying fallback...');
-            posts = await this.page.$$('[role="article"]');
-        }
-        
-        console.log(`📹 Found ${posts.length} potential posts to check`);
-
-        if (posts.length === 0) {
-            console.log('❌ No posts found on the profile');
-            return;
-        }
-
-        // Process posts in smaller batches to avoid stale elements
-        const batchSize = 3;
-        for (let i = 0; i < posts.length; i += batchSize) {
-            const endIndex = Math.min(i + batchSize, posts.length);
-            console.log(`\n📦 Processing batch ${Math.floor(i/batchSize) + 1}: posts ${i + 1}-${endIndex}`);
-            
-            // Re-query posts to avoid stale element references
-            let currentPosts = await this.page.$$('.x1jx94hy > div > div > div > div.html-div');
-            
-            if (currentPosts.length === 0) {
-                currentPosts = await this.page.$$('[role="article"]');
-            }
-            
-            for (let j = i; j < endIndex && j < currentPosts.length; j++) {
-                console.log(`\n🎯 Processing post ${j + 1}/${posts.length}...`);
-                
+            // Try the first visible three-dot button
+            for (let dotIndex = 0; dotIndex < threeDotElements.length; dotIndex++) {
                 try {
-                    await this.deletePost(currentPosts[j], j);
-                    await this.delay(4000); // Safety delay between deletions
-                } catch (error) {
-                    console.error(`❌ Failed to delete post ${j + 1}: ${error.message}`);
-                    this.failedCount++;
+                    const threeDotElement = threeDotElements[dotIndex];
+                    
+                    // Check if element is visible and clickable
+                    const isVisible = await this.page.evaluate(el => {
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0 && rect.top >= 0;
+                    }, threeDotElement);
+
+                    if (!isVisible) {
+                        console.log(`   ⚠️ Three-dot menu ${dotIndex + 1} not visible, skipping...`);
+                        continue;
+                    }
+
+                    console.log(`   🎯 Clicking three-dot menu ${dotIndex + 1} to check for DELETE option...`);
+                    
+                    // Get clickable parent element for the three-dot menu
+                    const clickableElement = await threeDotElement.evaluateHandle((svg) => {
+                        let parent = svg.parentElement;
+                        while (parent && parent !== document.body) {
+                            if (parent.tagName === 'BUTTON' || 
+                                parent.role === 'button' || 
+                                parent.getAttribute('role') === 'button' ||
+                                parent.onclick ||
+                                parent.getAttribute('aria-label')) {
+                                return parent;
+                            }
+                            parent = parent.parentElement;
+                            if (parent && parent.getAttribute('role') === 'article') break;
+                        }
+                        return svg.parentElement || svg;
+                    });
+                    
+                    // Click the three-dot menu
+                    await clickableElement.click();
+                    await this.delay(4000); // Wait for dropdown to appear
+
+                    // Check if YOUR SPECIFIC delete selector exists
+                    const deleteSelector = '[aria-hidden="false"] [aria-label="Delete"][role="button"]';
+                    const deleteButton = await this.page.$(deleteSelector);
+                    
+                    if (deleteButton) {
+                        console.log(`   ✅ DELETE OPTION FOUND in post ${index + 1} using your selector!`);
+                        
+                        // Close the dropdown by pressing Escape
+                        await this.page.keyboard.press('Escape');
+                        await this.delay(2000);
+                        
+                        return true;
+                    } else {
+                        console.log(`   ❌ No delete option found with selector: ${deleteSelector}`);
+                        
+                        // Close the dropdown by pressing Escape
+                        await this.page.keyboard.press('Escape');
+                        await this.delay(2000);
+                    }
+                    
+                    // Only try the first clickable three-dot menu
+                    break;
+                    
+                } catch (menuError) {
+                    console.log(`   ⚠️ Error checking menu ${dotIndex + 1}: ${menuError.message}`);
+                    
+                    // Try to close any open dropdown
+                    try {
+                        await this.page.keyboard.press('Escape');
+                        await this.delay(2000);
+                    } catch (escError) {
+                        // Ignore escape errors
+                    }
                 }
             }
+
+            console.log(`   ❌ POST ${index + 1} - NO DELETE OPTION available with your selector`);
+            return false;
+
+        } catch (error) {
+            console.error(`   ❌ Error checking post ${index + 1} for delete option: ${error.message}`);
             
-            // Small delay between batches
-            await this.delay(2000);
+            // Try to close any open dropdown
+            try {
+                await this.page.keyboard.press('Escape');
+                await this.delay(2000);
+            } catch (escError) {
+                // Ignore escape errors
+            }
+            
+            return false;
+        }
+    }
+
+    async findAndDeletePosts() {
+        console.log('🗑️ Starting direct post deletion process...');
+        console.log('📋 Will attempt to delete ALL posts directly (no pre-checking)');
+
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+        await this.delay(5000); // Wait for page to settle
+
+        // Get posts using selectors from selectors.js
+        let posts = await this.page.$$(selectors.posts.postSection);
+        
+        if (posts.length === 0) {
+            console.log('⚠️ No posts found with specific selector, trying article selector...');
+            posts = await this.page.$$(selectors.posts.article);
+        }
+        
+        console.log(`📹 Found ${posts.length} posts to process - WILL TRY TO DELETE ALL`);
+
+        // Process ALL posts directly (no checking phase)
+        for (let i = 0; i < posts.length; i++) {
+            console.log(`\n🎯 Processing post ${i + 1} of ${posts.length}...`);
+            
+            // Re-query posts to avoid stale element references
+            let currentPosts = await this.page.$$(selectors.posts.postSection);
+            if (currentPosts.length === 0) {
+                currentPosts = await this.page.$$(selectors.posts.article);
+            }
+            
+            // Since we're deleting posts, the index might shift
+            const adjustedIndex = Math.min(i, currentPosts.length - 1);
+            
+            if (adjustedIndex >= 0 && adjustedIndex < currentPosts.length) {
+                try {
+                    await this.deletePost(currentPosts[adjustedIndex], i);
+                    
+                    // 50 second delay between deletions (except for the last one)
+                    if (i < posts.length - 1) {
+                        console.log(`⏱️ Waiting 50 seconds before next deletion...`);
+                        for (let countdown = 50; countdown > 0; countdown--) {
+                            process.stdout.write(`\r⏱️ Next deletion in: ${countdown} seconds`);
+                            await this.delay(1000);
+                        }
+                        console.log('\n✅ Proceeding to next post...');
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to delete post ${i + 1}: ${error.message}`);
+                    this.failedCount++;
+                }
+            } else {
+                console.log(`⚠️ Post index ${i + 1} no longer valid (posts shifted after deletions)`);
+            }
         }
 
-        console.log(`\n📊 Deletion Summary:`);
+        console.log(`\n📊 Final Summary:`);
         console.log(`✅ Successfully deleted: ${this.deletedCount} posts`);
         console.log(`❌ Failed deletions: ${this.failedCount} posts`);
+        console.log(`📊 Total posts processed: ${posts.length} posts`);
     }
 
     async deletePost(post, index) {
         try {
-            // Scroll the post into view
+            // Step 1: Scroll to post
             await post.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await this.delay(1500);
+            await this.delay(3000);
+            console.log(`📜 Step 1: Post ${index + 1} - Scrolled to post`);
 
-            // Try your specific three-dot menu selector first
-            console.log(`🔍 Looking for three-dot menu in post ${index + 1}...`);
+            console.log(`🗑️ Post ${index + 1} - Starting 4-step deletion process`);
+
+            // Step 2: Click three-dot menu
+            console.log(`🔍 Step 2: Post ${index + 1} - Looking for three-dot menu...`);
+
+            // Find three-dot menu using selectors from selectors.js
+            const threeDotSelector = getThreeDotSelectors();
+            console.log(`🔍 Using three-dot selectors: ${threeDotSelector}`);
+            const threeDotElements = await post.$$(threeDotSelector);
             
-            let threeDotMenu = null;
+            if (threeDotElements.length === 0) {
+                console.log(`❌ Post ${index + 1} - No three-dot menu found with selectors.js`);
+                this.failedCount++;
+                return;
+            }
+
+            console.log(`📍 Post ${index + 1} - Found ${threeDotElements.length} three-dot element(s)`);
+
+            // Get the first visible three-dot element
+            let threeDotElement = null;
+            for (const element of threeDotElements) {
+                const isVisible = await this.page.evaluate(el => {
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 && rect.top >= 0;
+                }, element);
+                
+                if (isVisible) {
+                    threeDotElement = element;
+                    break;
+                }
+            }
+
+            if (!threeDotElement) {
+                console.log(`⚠️ Post ${index + 1} - no visible three-dot menu found`);
+                this.failedCount++;
+                return;
+            }
+
+            console.log(`✅ Post ${index + 1} - found three-dot menu, clicking...`);
+
+            // Get clickable parent
+            const clickableElement = await threeDotElement.evaluateHandle((svg) => {
+                let parent = svg.parentElement;
+                while (parent && parent !== document.body) {
+                    if (parent.tagName === 'BUTTON' || 
+                        parent.role === 'button' || 
+                        parent.getAttribute('role') === 'button' ||
+                        parent.onclick ||
+                        parent.getAttribute('aria-label')) {
+                        return parent;
+                    }
+                    parent = parent.parentElement;
+                    if (parent && parent.getAttribute('role') === 'article') break;
+                }
+                return svg.parentElement || svg;
+            });
+
+            // Click three-dot menu
+            console.log(`🔧 Step 2: Post ${index + 1} - Clicking three-dot menu`);
+            await clickableElement.click();
+            await this.delay(4000); // Wait for dropdown
+
+            // Step 3: Click delete button
+            console.log(`🔍 Step 3: Post ${index + 1} - Looking for DELETE option in menu...`);
             
-            // First try your specific SVG selector
-            console.log(`🎯 Trying specific SVG selector: svg[fill="currentColor"] > g[transform="translate(-446 -350)"]`);
+            // Use delete option selectors from selectors.js
+            const deleteOptionSelectors = this.selectors.menus.deleteOptions;
+            
             try {
-                threeDotMenu = await post.$('svg[fill="currentColor"] > g[transform="translate(-446 -350)"]');
-                if (threeDotMenu) {
-                    console.log(`✅ Found three-dot menu using specific SVG selector`);
-                } else {
-                    // Try clicking the parent SVG instead
-                    const parentSvg = await post.$('svg[fill="currentColor"]:has(g[transform="translate(-446 -350)"])');
-                    if (parentSvg) {
-                        threeDotMenu = parentSvg;
-                        console.log(`✅ Found parent SVG with three-dot transform`);
-                    }
-                }
-            } catch (error) {
-                console.log(`⚠️ Specific SVG selector failed: ${error.message}`);
-            }
-            
-            // If that fails, try looking for any SVG with that transform
-            if (!threeDotMenu) {
-                console.log(`🔍 Looking for any SVG with the transform...`);
-                try {
-                    const allSvgs = await post.$$('svg[fill="currentColor"]');
-                    console.log(`🔍 Found ${allSvgs.length} SVG elements in post`);
-                    
-                    for (let i = 0; i < allSvgs.length; i++) {
-                        const svg = allSvgs[i];
-                        const hasTransform = await svg.$('g[transform="translate(-446 -350)"]');
-                        if (hasTransform) {
-                            threeDotMenu = svg;
-                            console.log(`✅ Found SVG ${i + 1} with correct transform`);
-                            break;
-                        }
-                    }
-                } catch (error) {
-                    console.log(`⚠️ SVG search failed: ${error.message}`);
-                }
-            }
-            
-            // If not found, try alternative approaches
-            if (!threeDotMenu) {
-                console.log(`🔍 Trying alternative menu selectors...`);
+                let deleteOption = null;
                 
-                // Try simpler selectors
-                const altSelectors = [
-                    '[role="button"]',
-                    'div[role="button"]', 
-                    '[aria-label*="option"]',
-                    '[aria-label*="Action"]',
-                    '[aria-label*="More"]',
-                    'svg',
-                    '[data-testid*="menu"]'
-                ];
-                
-                for (const selector of altSelectors) {
-                    const elements = await post.$$(selector);
-                    console.log(`🔍 Found ${elements.length} elements with selector: ${selector}`);
+                // Try each delete option selector from selectors.js
+                for (const selector of deleteOptionSelectors) {
+                    await this.delay(1000);
                     
-                    if (elements.length > 0) {
-                        // Try to find one that looks like a menu
-                        for (const element of elements) {
-                            const ariaLabel = await element.evaluate(el => el.getAttribute('aria-label') || '');
-                            const text = await element.evaluate(el => el.textContent || '');
-                            console.log(`   - Element: aria-label="${ariaLabel}", text="${text}"`);
-                            
-                            if (ariaLabel.toLowerCase().includes('option') || 
-                                ariaLabel.toLowerCase().includes('action') ||
-                                ariaLabel.toLowerCase().includes('more') ||
-                                ariaLabel.toLowerCase().includes('menu')) {
-                                threeDotMenu = element;
-                                console.log(`✅ Found potential menu: ${ariaLabel}`);
+                    // Handle special selectors that use text content
+                    if (selector.includes(':has-text') || selector.includes(':contains')) {
+                        // For these, we need to check text content manually
+                        const menuItems = await this.page.$$('[role="menuitem"]');
+                        for (const item of menuItems) {
+                            const text = await this.page.evaluate(el => el.textContent?.toLowerCase() || '', item);
+                            if (text.includes('delete')) {
+                                deleteOption = item;
+                                console.log(`✅ Step 3: Post ${index + 1} - Found DELETE option with text: "${text}"`);
                                 break;
                             }
                         }
-                    }
-                    
-                    if (threeDotMenu) break;
-                }
-            }
-            
-            // Last resort: try looking in the entire page
-            if (!threeDotMenu) {
-                console.log(`🔍 Searching entire page for visible menus...`);
-                const allMenus = await this.page.$$(threeDotSelectors);
-                console.log(`Found ${allMenus.length} menus on entire page`);
-                
-                if (allMenus.length > 0) {
-                    // Find the menu that's visible and within the post area
-                    for (const menu of allMenus) {
-                        const isVisible = await menu.evaluate(el => {
-                            const rect = el.getBoundingClientRect();
-                            return rect.width > 0 && rect.height > 0 && 
-                                   rect.top >= 0 && rect.bottom <= window.innerHeight;
-                        });
-                        if (isVisible) {
-                            threeDotMenu = menu;
-                            console.log(`✅ Found visible menu on page`);
+                    } else {
+                        // For regular selectors
+                        deleteOption = await this.page.$(selector);
+                        if (deleteOption) {
+                            const text = await this.page.evaluate(el => el.textContent?.toLowerCase() || '', deleteOption);
+                            console.log(`✅ Step 3: Post ${index + 1} - Found DELETE option with selector: ${selector}, text: "${text}"`);
                             break;
                         }
                     }
-                }
-            }
-            
-            if (!threeDotMenu) {
-                console.log(`⚠️ No three-dot menu found in post ${index + 1}, skipping...`);
-                return;
-            }
-
-            // Click the three-dot menu
-            console.log(`🔧 Clicking three-dot menu for post ${index + 1}...`);
-            try {
-                // Try regular click first
-                await threeDotMenu.click();
-            } catch (error) {
-                try {
-                    // Try JavaScript click as fallback
-                    await threeDotMenu.evaluate(el => el.click());
-                } catch (jsError) {
-                    // Try clicking the parent element
-                    const parent = await threeDotMenu.evaluateHandle(el => el.parentElement);
-                    await parent.click();
-                }
-            }
-            
-            await this.delay(2000);
-
-            // Wait for menu to appear and look for delete option
-            console.log(`🔍 Looking for delete option in menu...`);
-            
-            const menuItems = await this.page.$$('[role="menuitem"]');
-            console.log(`📋 Found ${menuItems.length} menu items`);
-            
-            if (menuItems.length === 0) {
-                console.log(`⚠️ No menu items found for post ${index + 1}, skipping...`);
-                return;
-            }
-
-            let deleteMenuItem = null;
-
-            // Check each menu item for delete text
-            for (let i = 0; i < menuItems.length; i++) {
-                try {
-                    const text = await menuItems[i].evaluate(el => el.textContent.toLowerCase().trim());
-                    console.log(`📝 Menu item ${i + 1}: "${text}"`);
                     
-                    if (text.includes('delete') || text.includes('remove') || 
-                        text.includes('trash') || text.includes('bin')) {
-                        deleteMenuItem = menuItems[i];
-                        console.log(`✅ Found delete option: "${text}"`);
-                        break;
-                    }
-                } catch (error) {
-                    console.log(`⚠️ Could not read menu item ${i + 1}`);
-                }
-            }
-
-            if (!deleteMenuItem) {
-                console.log(`⚠️ No delete option found for post ${index + 1}, skipping...`);
-                // Click somewhere else to close the menu
-                await this.page.click('body');
-                return;
-            }
-
-            // Click the delete option
-            console.log(`🗑️ Clicking delete option for post ${index + 1}...`);
-            try {
-                await deleteMenuItem.click();
-            } catch (error) {
-                await deleteMenuItem.evaluate(el => el.click());
-            }
-            
-            await this.delay(3000);
-
-            // Wait for confirmation dialog and click confirm
-            console.log(`🔍 Looking for confirmation dialog...`);
-            
-            try {
-                // Wait a moment for the dialog to appear
-                await this.delay(1500);
-                
-                // Try multiple ways to find the confirmation button
-                let confirmButton = null;
-                
-                // Method 1: Try the specific selectors
-                const confirmSelectors = getConfirmationSelectors();
-                try {
-                    await this.page.waitForSelector(confirmSelectors, { timeout: 5000 });
-                    confirmButton = await this.page.$(confirmSelectors);
-                } catch (error) {
-                    console.log(`⚠️ Standard confirmation selectors failed: ${error.message}`);
+                    if (deleteOption) break;
                 }
                 
-                // Method 2: Look for any button with "Delete" text in a dialog
-                if (!confirmButton) {
-                    console.log(`🔍 Looking for delete button in dialog...`);
-                    const dialogButtons = await this.page.$$('[role="dialog"] [role="button"], [aria-modal="true"] [role="button"]');
+                if (deleteOption) {
+                    await deleteOption.click();
+                    await this.delay(3000);
+                    console.log(`🎯 Step 3: Post ${index + 1} - Clicked DELETE option`);
                     
-                    for (const button of dialogButtons) {
-                        const text = await button.evaluate(el => el.textContent.toLowerCase().trim());
-                        const ariaLabel = await button.evaluate(el => (el.getAttribute('aria-label') || '').toLowerCase());
-                        
-                        console.log(`🔍 Dialog button: text="${text}", aria-label="${ariaLabel}"`);
-                        
-                        if (text.includes('delete') || ariaLabel.includes('delete')) {
-                            confirmButton = button;
-                            console.log(`✅ Found delete confirmation button: "${text}"`);
-                            break;
-                        }
-                    }
-                }
-                
-                // Method 3: Look for any red/primary button in dialogs (Facebook typically uses red for delete)
-                if (!confirmButton) {
-                    console.log(`🔍 Looking for red/primary buttons in dialogs...`);
-                    const allButtons = await this.page.$$('[role="dialog"] [role="button"], [aria-modal="true"] [role="button"]');
-                    
-                    for (const button of allButtons) {
-                        const styles = await button.evaluate(el => {
-                            const computed = window.getComputedStyle(el);
-                            return {
-                                backgroundColor: computed.backgroundColor,
-                                color: computed.color,
-                                className: el.className
-                            };
-                        });
-                        
-                        // Check if button looks like a delete button (red background or specific classes)
-                        if (styles.backgroundColor.includes('rgb(220, 38, 38)') || // Red
-                            styles.backgroundColor.includes('rgb(239, 68, 68)') ||
-                            styles.className.includes('danger') ||
-                            styles.className.includes('destructive')) {
-                            confirmButton = button;
-                            console.log(`✅ Found potential delete button by style`);
-                            break;
-                        }
-                    }
-                }
-                
-                if (confirmButton) {
-                    console.log(`✅ Confirming deletion for post ${index + 1}...`);
+                    // Step 4: Click confirmation delete button
+                    console.log(`🔍 Step 4: Post ${index + 1} - Looking for confirmation DELETE button...`);
                     
                     try {
-                        await confirmButton.click();
-                    } catch (error) {
-                        await confirmButton.evaluate(el => el.click());
+                        // Use confirmation selectors from selectors.js
+                        const confirmSelector = getConfirmationSelectors();
+                        console.log(`🔍 Using confirmation selectors: ${confirmSelector}`);
+                        
+                        await this.page.waitForSelector(confirmSelector, { timeout: 8000 });
+                        const confirmButton = await this.page.$(confirmSelector);
+                        
+                        if (confirmButton) {
+                            await confirmButton.click();
+                            await this.delay(5000);
+                            this.deletedCount++;
+                            console.log(`🎉 SUCCESS: Post ${index + 1} - DELETED COMPLETELY (4 steps completed)`);
+                        } else {
+                            console.log(`⚠️ Post ${index + 1} - Confirmation button not found`);
+                            this.failedCount++;
+                        }
+                        
+                    } catch (confirmError) {
+                        console.log(`⚠️ Post ${index + 1} - Confirmation step failed: ${confirmError.message}`);
+                        this.failedCount++;
                     }
-                    
-                    await this.delay(3000);
-                    
-                    this.deletedCount++;
-                    console.log(`🎉 Successfully deleted post ${index + 1}`);
                 } else {
-                    console.log(`⚠️ Confirmation button not found for post ${index + 1}`);
+                    console.log(`⚠️ Post ${index + 1} - delete button not found with selector: ${deleteSelector}`);
                     this.failedCount++;
                 }
             } catch (error) {
-                console.log(`⚠️ Error in confirmation dialog for post ${index + 1}: ${error.message}`);
+                console.log(`⚠️ Post ${index + 1} - deletion failed: ${error.message}`);
                 this.failedCount++;
             }
 
         } catch (error) {
-            console.error(`❌ Error processing post ${index + 1}: ${error.message}`);
+            console.error(`❌ Post ${index + 1} - error: ${error.message}`);
+            this.failedCount++;
             throw error;
         }
     }
@@ -514,9 +472,8 @@ class FacebookVideoDeleter {
         try {
             await this.init();
             await this.navigateToProfile();
-            await this.scrollToLoadAllVideos();
-            await this.findAndDeleteVideos();
-            
+            await this.scrollToLoadAllPosts();
+            await this.findAndDeletePosts();
         } catch (error) {
             console.error('❌ Fatal error:', error.message);
         } finally {
@@ -538,9 +495,8 @@ class FacebookVideoDeleter {
 async function main() {
     const deleter = new FacebookVideoDeleter();
     
-    // Handle graceful shutdown
     process.on('SIGINT', async () => {
-        console.log('\n🛑 Received interrupt signal, closing browser...');
+        console.log('\n🛑 Closing browser...');
         await deleter.close();
         process.exit(0);
     });
@@ -548,7 +504,6 @@ async function main() {
     await deleter.run();
 }
 
-// Start the script
 if (require.main === module) {
     main().catch(console.error);
 }
