@@ -93,10 +93,12 @@ async function init() {
 startBtn.addEventListener('click', async () => {
   if (!currentTabId) return;
   startBtn.disabled = true;
-  addLog('▶ Starting automation…', 'progress');
+
+  const mode = document.querySelector('input[name="delete-mode"]:checked')?.value || 'videos';
+  addLog(`▶ Starting — mode: ${mode}…`, 'progress');
 
   try {
-    await chrome.tabs.sendMessage(currentTabId, { action: 'start' });
+    await chrome.tabs.sendMessage(currentTabId, { action: 'start', mode });
     setRunningState(true);
     statsSection.style.display = 'flex';
   } catch (e) {

@@ -82,6 +82,55 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Mode selector */
+.mode-selector {
+  margin: 0 8px 8px;
+  background: white;
+  border: 1px solid #e4e6eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.mode-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #65676b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+.mode-options {
+  display: flex;
+  gap: 4px;
+}
+.mode-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1.5px solid #e4e6eb;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.mode-option input[type="radio"] {
+  display: none;
+}
+.mode-option:has(input:checked) {
+  border-color: #1877f2;
+  background: #e7f3ff;
+  color: #1877f2;
+  font-weight: 600;
+}
+.mode-option:hover:not(:has(input:checked)) {
+  background: #f0f2f5;
+  border-color: #ccd0d5;
+}
+
 /* Controls */
 .controls {
   padding: 0 8px 8px;
