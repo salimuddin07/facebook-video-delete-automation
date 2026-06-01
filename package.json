@@ -1,22 +1,12 @@
 {
-  "name": "facebook-video-delete-automation",
-  "version": "1.0.0",
-  "description": "Automated script to delete all Facebook videos using Puppeteer",
-  "main": "facebook-video-delete.js",
-  "scripts": {
-    "start": "node facebook-video-delete.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
-    "facebook",
-    "automation",
-    "puppeteer",
-    "video",
-    "delete"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "puppeteer": "^24.25.0"
-  }
+    "license":  "MIT",
+    "description":  "Chrome extension to delete all Facebook videos using your existing browser login",
+    "name":  "facebook-video-delete-automation",
+    "version":  "1.0.0",
+    "keywords":  [
+                     "facebook",
+                     "extension",
+                     "video",
+                     "delete"
+                 ]
 }

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facebook Video Deleter</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🗑️</div>
+    <div class="header-text">
+      <h1>FB Video Deleter</h1>
+      <p class="subtitle">Delete all your Facebook videos</p>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status-bar">
+    <span id="status-icon">ℹ️</span>
+    <span id="status-text">Navigate to your Facebook profile to begin</span>
+  </div>
+
+  <div class="mode-selector">
+    <div class="mode-label">What to delete:</div>
+    <div class="mode-options">
+      <label class="mode-option">
+        <input type="radio" name="delete-mode" value="videos" checked />
+        <span>🎬 Videos only</span>
+      </label>
+      <label class="mode-option">
+        <input type="radio" name="delete-mode" value="posts" />
+        <span>🖼️ Posts &amp; Images</span>
+      </label>
+      <label class="mode-option">
+        <input type="radio" name="delete-mode" value="both" />
+        <span>🗑️ Both</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="stats" id="stats-section" style="display:none;">
+    <div class="stat-card">
+      <div class="stat-number" id="stat-deleted">0</div>
+      <div class="stat-label">Deleted</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="stat-number" id="stat-failed">0</div>
+      <div class="stat-label">Failed</div>
+    </div>
+    <div class="stat-card muted">
+      <div class="stat-number" id="stat-skipped">0</div>
+      <div class="stat-label">Skipped</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="start-btn" class="btn-primary" disabled>
+      ▶ Start Deleting
+    </button>
+    <button id="stop-btn" class="btn-danger" style="display:none;">
+      ⏹ Stop
+    </button>
+  </div>
+
+  <div class="countdown-bar" id="countdown-bar" style="display:none;">
+    <span id="countdown-text">⏱️ Waiting…</span>
+  </div>
+
+  <div class="log-section">
+    <div class="log-header">
+      <span>Activity Log</span>
+      <button id="clear-log-btn" class="btn-tiny">Clear</button>
+    </div>
+    <div id="log-area" class="log-area"></div>
+  </div>
+
+  <div class="footer">
+    ⚠️ This permanently deletes videos. Use with caution.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
